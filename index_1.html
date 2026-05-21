@@ -1,0 +1,1434 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>스포츠클럽 친선경기 투표</title>
+<link rel="preconnect" href="https://cdn.jsdelivr.net">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css">
+<style>
+/* ============================================================
+   CONFIG
+============================================================ */
+/* ⚠️ 배포 시 이 URL을 본인의 Google Apps Script 웹 앱 URL로 교체 */
+/* ⚠️ Apps Script 배포 후 받은 https://script.google.com/macros/s/.../exec 주소 */
+
+/* ============================================================
+   DESIGN TOKENS - 대구FC 컬러 액센트 + 흑백 명료성
+============================================================ */
+:root {
+  --navy: #001E62;
+  --sky: #6CACE4;
+  --gold: #C8A951;
+
+  --bg: #F5F5F2;
+  --surface: #FFFFFF;
+  --ink: #0A0A0A;
+  --ink-soft: #2A2A2A;
+  --muted: #8A8A8A;
+  --line: #E5E5E0;
+
+  /* 상태 색 */
+  --attend-bg: #FFFFFF;
+  --attend-fg: #0A0A0A;
+  --absent-bg: #0A0A0A;
+  --absent-fg: #FFFFFF;
+  --pending-bg: #E5E5E0;
+  --pending-fg: #8A8A8A;
+
+  --radius: 10px;
+  --radius-sm: 6px;
+  --shadow: 0 1px 0 rgba(0,0,0,0.04), 0 8px 24px -12px rgba(0,0,0,0.08);
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: 'tnum';
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+button { font-family: inherit; cursor: pointer; border: none; background: none; color: inherit; }
+input, textarea, select { font-family: inherit; font-size: inherit; }
+
+/* ============================================================
+   APP SHELL
+============================================================ */
+.app {
+  max-width: 720px;
+  margin: 0 auto;
+  min-height: 100vh;
+  background: var(--bg);
+}
+
+/* ============================================================
+   HEADER
+============================================================ */
+.header {
+  background: var(--navy);
+  color: #fff;
+  padding: 18px 18px 22px;
+  position: relative;
+}
+.header-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.header-brand {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--sky);
+  font-weight: 600;
+}
+.teacher-toggle {
+  width: 34px; height: 34px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.08);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px;
+  transition: background 0.15s;
+}
+.teacher-toggle:active { background: rgba(255,255,255,0.18); }
+.teacher-toggle.active { background: var(--gold); color: var(--navy); }
+
+.vote-title {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 0 0 6px;
+}
+.vote-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  font-size: 13px;
+  color: rgba(255,255,255,0.75);
+}
+.vote-meta span { display: inline-flex; align-items: center; gap: 4px; }
+.vote-meta .icon { opacity: 0.6; }
+
+/* 투표 선택 드롭다운 (교사 모드) */
+.vote-selector {
+  display: none;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255,255,255,0.12);
+}
+.teacher-mode .vote-selector { display: block; }
+.vote-selector select {
+  width: 100%;
+  padding: 10px 12px;
+  background: rgba(0,0,0,0.25);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: var(--radius-sm);
+  color: #fff;
+  appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path d='M1 1l5 5 5-5' stroke='white' stroke-width='1.5' fill='none' stroke-linecap='round'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 36px;
+}
+
+/* ============================================================
+   STATS BAR
+============================================================ */
+.stats {
+  background: var(--surface);
+  margin: 12px 12px 0;
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 0;
+  position: relative;
+  box-shadow: var(--shadow);
+}
+.stats-item { text-align: center; position: relative; }
+.stats-item:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  right: 0; top: 18%; height: 64%;
+  width: 1px;
+  background: var(--line);
+}
+.stats-label {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.stats-value {
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.stats-value.attend { color: var(--navy); }
+.stats-value.absent { color: var(--ink); }
+.stats-value.pending { color: var(--muted); }
+
+/* ============================================================
+   GRADE SECTIONS
+============================================================ */
+.grades { padding: 16px 12px 100px; }
+.grade-section {
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 14px 14px 16px;
+  margin-bottom: 12px;
+  box-shadow: var(--shadow);
+}
+.grade-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+.grade-title {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.grade-title .num {
+  color: var(--navy);
+  font-size: 17px;
+  margin-right: 2px;
+}
+.grade-summary {
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.grade-summary .ok { color: var(--ink); font-weight: 600; }
+
+/* ============================================================
+   STUDENT GRID - 핵심: 위치 고정, 색깔로만 상태 표시
+============================================================ */
+.student-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+@media (min-width: 480px) {
+  .student-grid { grid-template-columns: repeat(5, 1fr); }
+}
+@media (min-width: 640px) {
+  .student-grid { grid-template-columns: repeat(6, 1fr); }
+}
+
+.student {
+  aspect-ratio: 1.4 / 1;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  text-align: center;
+  padding: 4px;
+  border: 1.5px solid transparent;
+  transition: transform 0.08s, box-shadow 0.15s;
+  position: relative;
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.student:active { transform: scale(0.96); }
+
+.student.attend {
+  background: var(--attend-bg);
+  color: var(--attend-fg);
+  border-color: var(--ink);
+}
+.student.absent {
+  background: var(--absent-bg);
+  color: var(--absent-fg);
+}
+.student.pending {
+  background: var(--pending-bg);
+  color: var(--pending-fg);
+  border-color: var(--line);
+}
+
+/* 메모/사유 있을 때 표시 - 교사 모드에서만 보임 */
+.student .dot {
+  display: none;
+  position: absolute;
+  top: 4px; right: 4px;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--gold);
+}
+.teacher-mode .student .has-note .dot,
+.teacher-mode .student.has-note .dot { display: block; }
+
+/* ============================================================
+   EMPTY STATE
+============================================================ */
+.empty {
+  text-align: center;
+  padding: 48px 20px;
+  color: var(--muted);
+}
+.empty-title { font-size: 15px; font-weight: 600; color: var(--ink-soft); margin-bottom: 6px; }
+.empty-sub { font-size: 13px; }
+
+/* ============================================================
+   FAB - 교사 전용 (새 투표, 명단관리)
+============================================================ */
+.fab-container {
+  display: none;
+  position: fixed;
+  bottom: calc(20px + env(safe-area-inset-bottom));
+  right: 20px;
+  z-index: 30;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-end;
+}
+.teacher-mode .fab-container { display: flex; }
+.fab {
+  background: var(--navy);
+  color: #fff;
+  padding: 12px 18px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: 0 8px 24px -8px rgba(0,30,98,0.5);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  letter-spacing: -0.01em;
+}
+.fab.secondary {
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+}
+.fab:active { transform: translateY(1px); }
+
+/* ============================================================
+   MODAL
+============================================================ */
+.modal-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.55);
+  display: none;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 100;
+  padding: 0;
+}
+@media (min-width: 540px) {
+  .modal-backdrop { align-items: center; padding: 20px; }
+}
+.modal-backdrop.show { display: flex; }
+.modal {
+  background: var(--surface);
+  width: 100%;
+  max-width: 480px;
+  border-radius: 18px 18px 0 0;
+  padding: 22px 20px calc(22px + env(safe-area-inset-bottom));
+  max-height: 90vh;
+  overflow-y: auto;
+  animation: slideUp 0.22s ease-out;
+}
+@media (min-width: 540px) {
+  .modal { border-radius: 14px; }
+}
+@keyframes slideUp {
+  from { transform: translateY(40px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.modal-title {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 0 0 4px;
+}
+.modal-sub {
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 18px;
+}
+.modal-close {
+  position: absolute;
+  top: 14px; right: 14px;
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  background: var(--bg);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px;
+  color: var(--muted);
+}
+
+/* 투표 버튼 */
+.vote-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin: 16px 0;
+}
+.vote-btn {
+  padding: 18px 12px;
+  border-radius: var(--radius);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  border: 2px solid var(--line);
+  background: var(--surface);
+  transition: all 0.12s;
+}
+.vote-btn.attend { color: var(--navy); }
+.vote-btn.absent { color: var(--ink); }
+.vote-btn.selected.attend {
+  background: var(--surface);
+  border-color: var(--ink);
+  box-shadow: 0 0 0 3px rgba(0,30,98,0.08);
+}
+.vote-btn.selected.absent {
+  background: var(--absent-bg);
+  color: var(--absent-fg);
+  border-color: var(--absent-bg);
+}
+
+/* 입력 필드 */
+.field { margin-bottom: 14px; }
+.field-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--ink-soft);
+  margin-bottom: 6px;
+}
+.field-hint {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 4px;
+  font-weight: 500;
+}
+.field-hint.secret { color: var(--gold); }
+.input, .textarea {
+  width: 100%;
+  padding: 11px 12px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  outline: none;
+  transition: border-color 0.15s;
+}
+.input:focus, .textarea:focus { border-color: var(--navy); }
+.textarea { resize: vertical; min-height: 60px; }
+
+.btn-primary {
+  width: 100%;
+  padding: 14px;
+  background: var(--navy);
+  color: #fff;
+  border-radius: var(--radius);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin-top: 8px;
+}
+.btn-primary:disabled { background: var(--muted); opacity: 0.5; }
+.btn-secondary {
+  width: 100%;
+  padding: 12px;
+  background: var(--bg);
+  color: var(--ink-soft);
+  border-radius: var(--radius);
+  font-size: 14px;
+  font-weight: 600;
+  margin-top: 8px;
+  border: 1px solid var(--line);
+}
+.btn-danger {
+  width: 100%;
+  padding: 12px;
+  background: transparent;
+  color: #C03030;
+  border-radius: var(--radius);
+  font-size: 13px;
+  font-weight: 600;
+  margin-top: 8px;
+}
+
+/* 교사가 보는 학생 상세 */
+.detail-row {
+  display: flex;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+  gap: 12px;
+}
+.detail-row:last-child { border-bottom: none; }
+.detail-label {
+  flex: 0 0 70px;
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 500;
+  padding-top: 1px;
+}
+.detail-value { flex: 1; font-size: 14px; color: var(--ink); }
+.detail-value.empty { color: var(--muted); font-style: italic; }
+.status-pill {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.status-pill.attend { background: var(--surface); color: var(--ink); border: 1.5px solid var(--ink); }
+.status-pill.absent { background: var(--ink); color: #fff; }
+.status-pill.pending { background: var(--pending-bg); color: var(--muted); }
+
+/* 명단 관리 */
+.roster-tabs {
+  display: flex;
+  gap: 4px;
+  background: var(--bg);
+  padding: 3px;
+  border-radius: var(--radius-sm);
+  margin-bottom: 14px;
+}
+.roster-tab {
+  flex: 1;
+  padding: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  border-radius: 4px;
+}
+.roster-tab.active {
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+.roster-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.roster-item {
+  display: flex;
+  align-items: center;
+  padding: 8px 10px;
+  background: var(--bg);
+  border-radius: var(--radius-sm);
+  gap: 10px;
+}
+.roster-item .order {
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  width: 22px;
+}
+.roster-item .name { flex: 1; font-size: 14px; font-weight: 500; }
+.roster-item .del {
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  background: rgba(192,48,48,0.08);
+  color: #C03030;
+  font-size: 14px;
+  display: flex; align-items: center; justify-content: center;
+}
+.roster-add {
+  display: flex;
+  gap: 6px;
+}
+.roster-add .input { flex: 1; }
+.roster-add button {
+  padding: 0 16px;
+  background: var(--navy);
+  color: #fff;
+  border-radius: var(--radius-sm);
+  font-weight: 600;
+  font-size: 13px;
+}
+
+/* 로딩 / 토스트 */
+.toast {
+  position: fixed;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--ink);
+  color: #fff;
+  padding: 10px 18px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 500;
+  z-index: 200;
+  opacity: 0;
+  transition: opacity 0.2s, transform 0.2s;
+  pointer-events: none;
+  white-space: nowrap;
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(-4px); }
+.toast.error { background: #C03030; }
+
+.loader {
+  position: fixed;
+  inset: 0;
+  background: rgba(245,245,242,0.7);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 300;
+  backdrop-filter: blur(4px);
+}
+.loader.show { display: flex; }
+.loader-spin {
+  width: 36px; height: 36px;
+  border: 3px solid var(--line);
+  border-top-color: var(--navy);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* 설정 표시 */
+.setup-banner {
+  display: none;
+  background: #FFF7E0;
+  border: 1px solid var(--gold);
+  color: #6B5400;
+  padding: 12px 14px;
+  margin: 12px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.setup-banner.show { display: block; }
+.setup-banner code {
+  background: rgba(0,0,0,0.06);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+}
+</style>
+</head>
+<body>
+
+<div class="app" id="app">
+
+  <!-- ========== HEADER ========== -->
+  <header class="header">
+    <div class="header-top">
+      <div class="header-brand">SPORTS CLUB · 친선경기</div>
+      <button class="teacher-toggle" id="teacherToggle" title="교사 모드">🔒</button>
+    </div>
+    <h1 class="vote-title" id="voteTitle">투표를 불러오는 중…</h1>
+    <div class="vote-meta" id="voteMeta"></div>
+
+    <!-- 교사 모드: 투표 선택 -->
+    <div class="vote-selector">
+      <select id="voteSelect"></select>
+    </div>
+  </header>
+
+  <!-- 설정 안내 (Apps Script URL 미입력 시) -->
+  <div class="setup-banner" id="setupBanner">
+    <strong>⚙️ 첫 설정이 필요해요</strong><br>
+    HTML 파일 상단의 <code>API_URL</code>에 Google Apps Script 웹앱 주소를 입력해주세요. 자세한 방법은 함께 제공된 <code>설정가이드.md</code>를 확인하세요.
+  </div>
+
+  <!-- ========== STATS ========== -->
+  <div class="stats" id="stats" style="display:none">
+    <div class="stats-item">
+      <div class="stats-label">참석</div>
+      <div class="stats-value attend" id="statAttend">0</div>
+    </div>
+    <div class="stats-item">
+      <div class="stats-label">불참</div>
+      <div class="stats-value absent" id="statAbsent">0</div>
+    </div>
+    <div class="stats-item">
+      <div class="stats-label">미투표</div>
+      <div class="stats-value pending" id="statPending">0</div>
+    </div>
+  </div>
+
+  <!-- ========== GRADE SECTIONS ========== -->
+  <main class="grades" id="grades"></main>
+
+  <!-- ========== FAB (교사 전용) ========== -->
+  <div class="fab-container">
+    <button class="fab secondary" id="fabRoster">👥 명단 관리</button>
+    <button class="fab" id="fabNewVote">＋ 새 투표</button>
+  </div>
+</div>
+
+<!-- ========== MODAL: 학생 투표 ========== -->
+<div class="modal-backdrop" id="voteModal">
+  <div class="modal" style="position:relative">
+    <button class="modal-close" data-close>×</button>
+    <h2 class="modal-title" id="vmTitle">홍길동</h2>
+    <div class="modal-sub" id="vmSub">3학년 · 참여 여부를 선택해주세요</div>
+
+    <div class="vote-buttons">
+      <button class="vote-btn attend" data-choice="attend">✅ 참석</button>
+      <button class="vote-btn absent" data-choice="absent">❌ 불참</button>
+    </div>
+
+    <div class="field">
+      <label class="field-label">비고 <span style="font-weight:400;color:var(--muted)">(선택)</span></label>
+      <input class="input" id="vmNote" placeholder="예: 30분 늦어요 / 일찍 가야 해요">
+    </div>
+
+    <div class="field" id="vmReasonField" style="display:none">
+      <label class="field-label">불참 사유 <span style="font-weight:400;color:var(--muted)">(선택)</span></label>
+      <textarea class="textarea" id="vmReason" placeholder="편하게 적어주세요"></textarea>
+      <div class="field-hint secret">🔒 선생님만 볼 수 있어요. 다른 친구들에겐 보이지 않아요.</div>
+    </div>
+
+    <button class="btn-primary" id="vmSubmit" disabled>제출</button>
+  </div>
+</div>
+
+<!-- ========== MODAL: 교사용 학생 상세 ========== -->
+<div class="modal-backdrop" id="detailModal">
+  <div class="modal" style="position:relative">
+    <button class="modal-close" data-close>×</button>
+    <h2 class="modal-title" id="dmTitle"></h2>
+    <div class="modal-sub" id="dmSub"></div>
+    <div class="detail-row">
+      <div class="detail-label">상태</div>
+      <div class="detail-value" id="dmStatus"></div>
+    </div>
+    <div class="detail-row">
+      <div class="detail-label">비고</div>
+      <div class="detail-value" id="dmNote"></div>
+    </div>
+    <div class="detail-row" id="dmReasonRow">
+      <div class="detail-label">불참 사유</div>
+      <div class="detail-value" id="dmReason"></div>
+    </div>
+    <div class="detail-row">
+      <div class="detail-label">수정 시각</div>
+      <div class="detail-value" id="dmTime"></div>
+    </div>
+    <button class="btn-secondary" id="dmReset">이 학생 응답 초기화</button>
+  </div>
+</div>
+
+<!-- ========== MODAL: PIN 입력 ========== -->
+<div class="modal-backdrop" id="pinModal">
+  <div class="modal" style="position:relative">
+    <button class="modal-close" data-close>×</button>
+    <h2 class="modal-title">교사 모드</h2>
+    <div class="modal-sub">관리용 PIN을 입력하세요</div>
+    <div class="field">
+      <input class="input" id="pinInput" type="tel" inputmode="numeric" maxlength="6" placeholder="● ● ● ●" style="text-align:center; font-size:22px; letter-spacing:8px;">
+    </div>
+    <button class="btn-primary" id="pinSubmit">확인</button>
+  </div>
+</div>
+
+<!-- ========== MODAL: 새 투표 생성 ========== -->
+<div class="modal-backdrop" id="newVoteModal">
+  <div class="modal" style="position:relative">
+    <button class="modal-close" data-close>×</button>
+    <h2 class="modal-title">새 투표 만들기</h2>
+    <div class="modal-sub">친선경기 정보를 입력하세요</div>
+
+    <div class="field">
+      <label class="field-label">제목</label>
+      <input class="input" id="nvTitle" placeholder="예: 매호중과의 친선전">
+    </div>
+    <div class="field">
+      <label class="field-label">상대 학교 / 팀</label>
+      <input class="input" id="nvOpponent" placeholder="예: 매호중학교">
+    </div>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px">
+      <div class="field">
+        <label class="field-label">날짜</label>
+        <input class="input" id="nvDate" type="date">
+      </div>
+      <div class="field">
+        <label class="field-label">시간</label>
+        <input class="input" id="nvTime" type="time">
+      </div>
+    </div>
+    <div class="field">
+      <label class="field-label">장소</label>
+      <input class="input" id="nvPlace" placeholder="예: 대구일중 운동장">
+    </div>
+    <div class="field">
+      <label class="field-label">메모 <span style="font-weight:400;color:var(--muted)">(선택)</span></label>
+      <textarea class="textarea" id="nvMemo" placeholder="준비물, 집합 정보 등"></textarea>
+    </div>
+
+    <button class="btn-primary" id="nvSubmit">만들기</button>
+    <button class="btn-danger" id="nvDelete" style="display:none">이 투표 삭제</button>
+  </div>
+</div>
+
+<!-- ========== MODAL: 명단 관리 ========== -->
+<div class="modal-backdrop" id="rosterModal">
+  <div class="modal" style="position:relative">
+    <button class="modal-close" data-close>×</button>
+    <h2 class="modal-title">명단 관리</h2>
+    <div class="modal-sub">학년별로 학생을 추가·삭제하세요</div>
+
+    <div class="roster-tabs" id="rosterTabs">
+      <button class="roster-tab active" data-grade="1">1학년</button>
+      <button class="roster-tab" data-grade="2">2학년</button>
+      <button class="roster-tab" data-grade="3">3학년</button>
+    </div>
+
+    <div class="roster-list" id="rosterList"></div>
+
+    <div class="roster-add">
+      <input class="input" id="rosterAddName" placeholder="추가할 학생 이름">
+      <button id="rosterAddBtn">＋ 추가</button>
+    </div>
+  </div>
+</div>
+
+<!-- 로딩 / 토스트 -->
+<div class="loader" id="loader"><div class="loader-spin"></div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============================================================
+   ⚙️ CONFIG - 여기를 본인 정보로 교체하세요
+============================================================ */
+const API_URL = ''; // ← Google Apps Script 웹앱 URL
+const TEACHER_PIN = '0517'; // ← 원하는 PIN으로 변경
+const REFRESH_INTERVAL_MS = 8000; // 8초마다 자동 갱신
+const APP_VERSION = 'v1.0.0';
+
+/* ============================================================
+   STATE
+============================================================ */
+const state = {
+  isTeacher: false,
+  currentVoteId: null,
+  votes: [],        // [{id, title, date, time, place, opponent, memo, status}]
+  roster: [],       // [{grade, order, name}]
+  responses: [],    // [{voteId, grade, name, status, note, reason, updatedAt}]
+  rosterTab: 1,
+  selectedChoice: null,
+  selectedStudent: null,
+};
+
+const $ = (id) => document.getElementById(id);
+
+/* ============================================================
+   UTILITIES
+============================================================ */
+function toast(msg, isError = false) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.className = 'toast show' + (isError ? ' error' : '');
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => { t.className = 'toast' + (isError ? ' error' : ''); }, 2200);
+}
+
+function showLoader(show) {
+  $('loader').classList.toggle('show', show);
+}
+
+function openModal(id) { $(id).classList.add('show'); }
+function closeModal(id) { $(id).classList.remove('show'); }
+
+function formatDate(d) {
+  if (!d) return '';
+  const dt = typeof d === 'string' ? new Date(d) : d;
+  if (isNaN(dt)) return d;
+  const days = ['일','월','화','수','목','금','토'];
+  return `${dt.getMonth()+1}/${dt.getDate()}(${days[dt.getDay()]})`;
+}
+
+function formatTime(t) {
+  if (!t) return '';
+  // "HH:MM" 형식 가정
+  return t.replace(':', '시 ') + '분';
+}
+
+function formatDateTime(iso) {
+  if (!iso) return '';
+  const dt = new Date(iso);
+  if (isNaN(dt)) return iso;
+  const h = String(dt.getHours()).padStart(2, '0');
+  const m = String(dt.getMinutes()).padStart(2, '0');
+  return `${dt.getMonth()+1}/${dt.getDate()} ${h}:${m}`;
+}
+
+/* ============================================================
+   API
+============================================================ */
+async function api(action, payload = {}) {
+  if (!API_URL) {
+    $('setupBanner').classList.add('show');
+    throw new Error('API_URL이 설정되지 않았습니다');
+  }
+  try {
+    // Apps Script에 POST (text/plain으로 CORS preflight 회피)
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action, ...payload }),
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || '서버 오류');
+    return data;
+  } catch (err) {
+    console.error('[API]', action, err);
+    toast(err.message || '네트워크 오류', true);
+    throw err;
+  }
+}
+
+async function loadAll() {
+  showLoader(true);
+  try {
+    const data = await api('getAll', { voteId: state.currentVoteId });
+    state.votes = data.votes || [];
+    state.roster = data.roster || [];
+    state.responses = data.responses || [];
+
+    // 현재 투표가 없거나 삭제된 경우, 가장 최근 활성 투표 선택
+    if (!state.currentVoteId || !state.votes.find(v => v.id === state.currentVoteId)) {
+      const active = state.votes.find(v => v.status !== 'ended') || state.votes[0];
+      state.currentVoteId = active ? active.id : null;
+      if (state.currentVoteId) {
+        // 다시 로드해서 응답 받기
+        const data2 = await api('getAll', { voteId: state.currentVoteId });
+        state.responses = data2.responses || [];
+      }
+    }
+    render();
+  } catch (e) {
+    // 토스트만 띄우고 통과
+  } finally {
+    showLoader(false);
+  }
+}
+
+async function refreshResponses() {
+  if (!state.currentVoteId) return;
+  try {
+    const data = await api('getResponses', { voteId: state.currentVoteId });
+    state.responses = data.responses || [];
+    renderGrades();
+    renderStats();
+  } catch (e) {
+    /* silent */
+  }
+}
+
+/* ============================================================
+   RENDER
+============================================================ */
+function render() {
+  document.body.classList.toggle('teacher-mode', state.isTeacher);
+  $('teacherToggle').classList.toggle('active', state.isTeacher);
+  $('teacherToggle').textContent = state.isTeacher ? '🔓' : '🔒';
+
+  renderHeader();
+  renderVoteSelector();
+  renderStats();
+  renderGrades();
+}
+
+function renderHeader() {
+  const vote = currentVote();
+  if (!vote) {
+    $('voteTitle').textContent = state.isTeacher ? '＋ 새 투표를 만들어주세요' : '진행 중인 투표가 없어요';
+    $('voteMeta').innerHTML = '';
+    $('stats').style.display = 'none';
+    return;
+  }
+  $('stats').style.display = 'grid';
+  $('voteTitle').textContent = vote.title || '제목 없음';
+
+  const parts = [];
+  if (vote.date)     parts.push(`<span><span class="icon">📅</span>${formatDate(vote.date)}</span>`);
+  if (vote.time)     parts.push(`<span><span class="icon">⏰</span>${formatTime(vote.time)}</span>`);
+  if (vote.place)    parts.push(`<span><span class="icon">📍</span>${vote.place}</span>`);
+  if (vote.opponent) parts.push(`<span><span class="icon">🆚</span>${vote.opponent}</span>`);
+  $('voteMeta').innerHTML = parts.join('');
+}
+
+function renderVoteSelector() {
+  const sel = $('voteSelect');
+  sel.innerHTML = '';
+  state.votes.forEach(v => {
+    const opt = document.createElement('option');
+    opt.value = v.id;
+    const dateStr = v.date ? formatDate(v.date) + ' · ' : '';
+    const statusStr = v.status === 'ended' ? ' [종료]' : '';
+    opt.textContent = `${dateStr}${v.title}${statusStr}`;
+    if (v.id === state.currentVoteId) opt.selected = true;
+    sel.appendChild(opt);
+  });
+}
+
+function renderStats() {
+  const all = state.roster;
+  const responses = state.responses;
+  let attend = 0, absent = 0;
+
+  all.forEach(s => {
+    const r = responses.find(r => r.grade == s.grade && r.name === s.name);
+    if (r?.status === 'attend') attend++;
+    else if (r?.status === 'absent') absent++;
+  });
+  const pending = all.length - attend - absent;
+
+  $('statAttend').textContent = attend;
+  $('statAbsent').textContent = absent;
+  $('statPending').textContent = pending;
+}
+
+function renderGrades() {
+  const container = $('grades');
+  container.innerHTML = '';
+
+  if (!currentVote()) {
+    container.innerHTML = `
+      <div class="empty">
+        <div class="empty-title">투표가 없어요</div>
+        <div class="empty-sub">${state.isTeacher ? '우측 하단의 ＋ 새 투표 버튼을 눌러주세요' : '선생님이 곧 투표를 열어주실 거예요'}</div>
+      </div>`;
+    return;
+  }
+
+  if (state.roster.length === 0) {
+    container.innerHTML = `
+      <div class="empty">
+        <div class="empty-title">학생 명단이 비어있어요</div>
+        <div class="empty-sub">${state.isTeacher ? '우측 하단의 👥 명단 관리에서 추가하세요' : '선생님께 문의해주세요'}</div>
+      </div>`;
+    return;
+  }
+
+  // 학년별 그룹
+  const byGrade = { 1: [], 2: [], 3: [] };
+  state.roster.forEach(s => {
+    if (byGrade[s.grade]) byGrade[s.grade].push(s);
+  });
+  // 학년 내 순서 고정 (order → 이름순 폴백)
+  Object.keys(byGrade).forEach(g => {
+    byGrade[g].sort((a, b) => (a.order || 0) - (b.order || 0) || a.name.localeCompare(b.name));
+  });
+
+  [1, 2, 3].forEach(grade => {
+    const list = byGrade[grade];
+    if (list.length === 0) return;
+
+    let attendCount = 0, absentCount = 0;
+    list.forEach(s => {
+      const r = state.responses.find(r => r.grade == grade && r.name === s.name);
+      if (r?.status === 'attend') attendCount++;
+      else if (r?.status === 'absent') absentCount++;
+    });
+    const pending = list.length - attendCount - absentCount;
+
+    const section = document.createElement('section');
+    section.className = 'grade-section';
+    section.innerHTML = `
+      <div class="grade-header">
+        <div class="grade-title"><span class="num">${grade}</span>학년</div>
+        <div class="grade-summary">
+          <span class="ok">${attendCount}</span> · ${absentCount} · <span style="opacity:0.6">${pending}</span>
+        </div>
+      </div>
+      <div class="student-grid"></div>
+    `;
+    const grid = section.querySelector('.student-grid');
+
+    list.forEach(s => {
+      const r = state.responses.find(r => r.grade == grade && r.name === s.name);
+      const status = r?.status || 'pending';
+      const hasNote = !!(r?.note || r?.reason);
+
+      const btn = document.createElement('button');
+      btn.className = `student ${status}` + (hasNote ? ' has-note' : '');
+      btn.dataset.grade = grade;
+      btn.dataset.name = s.name;
+      btn.innerHTML = `<span class="dot"></span>${s.name}`;
+      btn.addEventListener('click', () => onStudentClick(grade, s.name));
+      grid.appendChild(btn);
+    });
+
+    container.appendChild(section);
+  });
+}
+
+/* ============================================================
+   ACTIONS
+============================================================ */
+function currentVote() {
+  return state.votes.find(v => v.id === state.currentVoteId);
+}
+
+function onStudentClick(grade, name) {
+  const r = state.responses.find(r => r.grade == grade && r.name === name);
+
+  if (state.isTeacher) {
+    // 교사 모드: 상세 보기
+    $('dmTitle').textContent = name;
+    $('dmSub').textContent = `${grade}학년`;
+
+    const status = r?.status || 'pending';
+    const statusLabel = status === 'attend' ? '✅ 참석' : status === 'absent' ? '❌ 불참' : '⚪ 미투표';
+    $('dmStatus').innerHTML = `<span class="status-pill ${status}">${statusLabel}</span>`;
+
+    $('dmNote').textContent = r?.note || '—';
+    $('dmNote').className = 'detail-value' + (r?.note ? '' : ' empty');
+
+    if (status === 'absent') {
+      $('dmReasonRow').style.display = 'flex';
+      $('dmReason').textContent = r?.reason || '(사유 미작성)';
+      $('dmReason').className = 'detail-value' + (r?.reason ? '' : ' empty');
+    } else {
+      $('dmReasonRow').style.display = 'none';
+    }
+
+    $('dmTime').textContent = r?.updatedAt ? formatDateTime(r.updatedAt) : '—';
+    $('dmTime').className = 'detail-value' + (r?.updatedAt ? '' : ' empty');
+
+    state.selectedStudent = { grade, name };
+    openModal('detailModal');
+  } else {
+    // 학생 모드: 투표 입력
+    if (!currentVote() || currentVote().status === 'ended') {
+      toast('이 투표는 종료되었습니다');
+      return;
+    }
+    state.selectedStudent = { grade, name };
+    state.selectedChoice = r?.status || null;
+
+    $('vmTitle').textContent = name;
+    $('vmSub').textContent = `${grade}학년 · 참여 여부를 선택해주세요`;
+    $('vmNote').value = r?.note || '';
+    $('vmReason').value = r?.reason || '';
+
+    updateVoteButtons();
+    openModal('voteModal');
+  }
+}
+
+function updateVoteButtons() {
+  document.querySelectorAll('.vote-btn').forEach(b => {
+    b.classList.toggle('selected', b.dataset.choice === state.selectedChoice);
+  });
+  $('vmReasonField').style.display = state.selectedChoice === 'absent' ? 'block' : 'none';
+  $('vmSubmit').disabled = !state.selectedChoice;
+}
+
+async function submitVote() {
+  const { grade, name } = state.selectedStudent;
+  showLoader(true);
+  try {
+    await api('saveResponse', {
+      voteId: state.currentVoteId,
+      grade, name,
+      status: state.selectedChoice,
+      note: $('vmNote').value.trim(),
+      reason: state.selectedChoice === 'absent' ? $('vmReason').value.trim() : '',
+    });
+    closeModal('voteModal');
+    toast('제출되었습니다 ✓');
+    await refreshResponses();
+  } catch (e) {
+    /* api에서 토스트 처리 */
+  } finally {
+    showLoader(false);
+  }
+}
+
+async function resetStudentResponse() {
+  if (!confirm('이 학생의 응답을 초기화할까요?')) return;
+  const { grade, name } = state.selectedStudent;
+  showLoader(true);
+  try {
+    await api('resetResponse', {
+      voteId: state.currentVoteId,
+      grade, name,
+    });
+    closeModal('detailModal');
+    toast('초기화되었습니다');
+    await refreshResponses();
+  } catch (e) { /* */ }
+  finally { showLoader(false); }
+}
+
+/* ============================================================
+   교사 모드 토글
+============================================================ */
+$('teacherToggle').addEventListener('click', () => {
+  if (state.isTeacher) {
+    state.isTeacher = false;
+    localStorage.removeItem('sc_teacher');
+    render();
+    toast('학생 모드로 전환');
+  } else {
+    $('pinInput').value = '';
+    openModal('pinModal');
+    setTimeout(() => $('pinInput').focus(), 100);
+  }
+});
+
+$('pinSubmit').addEventListener('click', () => {
+  if ($('pinInput').value === TEACHER_PIN) {
+    state.isTeacher = true;
+    localStorage.setItem('sc_teacher', '1');
+    closeModal('pinModal');
+    render();
+    toast('교사 모드 ✓');
+  } else {
+    toast('PIN이 틀렸어요', true);
+  }
+});
+
+$('pinInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') $('pinSubmit').click();
+});
+
+/* ============================================================
+   투표 선택
+============================================================ */
+$('voteSelect').addEventListener('change', async (e) => {
+  state.currentVoteId = e.target.value;
+  await loadAll();
+});
+
+/* ============================================================
+   새 투표 / 투표 편집
+============================================================ */
+$('fabNewVote').addEventListener('click', () => {
+  // 새 투표 생성 모드
+  $('nvTitle').value = '';
+  $('nvOpponent').value = '';
+  $('nvDate').value = '';
+  $('nvTime').value = '';
+  $('nvPlace').value = '';
+  $('nvMemo').value = '';
+  $('nvDelete').style.display = 'none';
+  $('nvSubmit').textContent = '만들기';
+  $('nvSubmit').dataset.mode = 'create';
+  openModal('newVoteModal');
+});
+
+// 현재 투표 수정 (제목 길게 누르기로 진입)
+let titlePressTimer;
+$('voteTitle').addEventListener('touchstart', () => startLongPress());
+$('voteTitle').addEventListener('mousedown', () => startLongPress());
+$('voteTitle').addEventListener('touchend', clearLongPress);
+$('voteTitle').addEventListener('mouseup', clearLongPress);
+$('voteTitle').addEventListener('mouseleave', clearLongPress);
+
+function startLongPress() {
+  if (!state.isTeacher || !currentVote()) return;
+  titlePressTimer = setTimeout(() => openEditVote(), 600);
+}
+function clearLongPress() { clearTimeout(titlePressTimer); }
+
+function openEditVote() {
+  const v = currentVote();
+  if (!v) return;
+  $('nvTitle').value = v.title || '';
+  $('nvOpponent').value = v.opponent || '';
+  $('nvDate').value = v.date || '';
+  $('nvTime').value = v.time || '';
+  $('nvPlace').value = v.place || '';
+  $('nvMemo').value = v.memo || '';
+  $('nvDelete').style.display = 'block';
+  $('nvSubmit').textContent = '수정 저장';
+  $('nvSubmit').dataset.mode = 'edit';
+  openModal('newVoteModal');
+}
+
+$('nvSubmit').addEventListener('click', async () => {
+  const payload = {
+    title: $('nvTitle').value.trim(),
+    opponent: $('nvOpponent').value.trim(),
+    date: $('nvDate').value,
+    time: $('nvTime').value,
+    place: $('nvPlace').value.trim(),
+    memo: $('nvMemo').value.trim(),
+  };
+  if (!payload.title) { toast('제목은 필수예요', true); return; }
+
+  showLoader(true);
+  try {
+    if ($('nvSubmit').dataset.mode === 'create') {
+      const res = await api('createVote', payload);
+      state.currentVoteId = res.voteId;
+      toast('새 투표가 생성되었어요 ✓');
+    } else {
+      await api('updateVote', { voteId: state.currentVoteId, ...payload });
+      toast('수정되었어요 ✓');
+    }
+    closeModal('newVoteModal');
+    await loadAll();
+  } catch (e) { /* */ }
+  finally { showLoader(false); }
+});
+
+$('nvDelete').addEventListener('click', async () => {
+  if (!confirm('이 투표를 삭제할까요? 모든 응답이 사라집니다.')) return;
+  showLoader(true);
+  try {
+    await api('deleteVote', { voteId: state.currentVoteId });
+    state.currentVoteId = null;
+    closeModal('newVoteModal');
+    toast('삭제되었습니다');
+    await loadAll();
+  } catch (e) { /* */ }
+  finally { showLoader(false); }
+});
+
+/* ============================================================
+   명단 관리
+============================================================ */
+$('fabRoster').addEventListener('click', () => {
+  renderRoster();
+  openModal('rosterModal');
+});
+
+document.querySelectorAll('.roster-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    state.rosterTab = parseInt(tab.dataset.grade);
+    document.querySelectorAll('.roster-tab').forEach(t =>
+      t.classList.toggle('active', parseInt(t.dataset.grade) === state.rosterTab));
+    renderRoster();
+  });
+});
+
+function renderRoster() {
+  const list = state.roster
+    .filter(s => s.grade == state.rosterTab)
+    .sort((a, b) => (a.order || 0) - (b.order || 0));
+
+  const el = $('rosterList');
+  if (list.length === 0) {
+    el.innerHTML = `<div class="empty" style="padding:24px"><div class="empty-sub">${state.rosterTab}학년 등록된 학생이 없어요</div></div>`;
+  } else {
+    el.innerHTML = '';
+    list.forEach((s, i) => {
+      const row = document.createElement('div');
+      row.className = 'roster-item';
+      row.innerHTML = `
+        <span class="order">${i + 1}</span>
+        <span class="name">${s.name}</span>
+        <button class="del" data-name="${s.name}">×</button>
+      `;
+      row.querySelector('.del').addEventListener('click', () => deleteStudent(s.name));
+      el.appendChild(row);
+    });
+  }
+}
+
+$('rosterAddBtn').addEventListener('click', addStudent);
+$('rosterAddName').addEventListener('keydown', e => {
+  if (e.key === 'Enter') addStudent();
+});
+
+async function addStudent() {
+  const name = $('rosterAddName').value.trim();
+  if (!name) return;
+  if (state.roster.find(s => s.grade == state.rosterTab && s.name === name)) {
+    toast('같은 학년에 이미 있어요', true);
+    return;
+  }
+  showLoader(true);
+  try {
+    await api('addStudent', { grade: state.rosterTab, name });
+    $('rosterAddName').value = '';
+    await loadAll();
+    renderRoster();
+    toast(`${name} 추가됨 ✓`);
+  } catch (e) { /* */ }
+  finally { showLoader(false); }
+}
+
+async function deleteStudent(name) {
+  if (!confirm(`${name} 학생을 명단에서 삭제할까요?\n(과거 투표 응답은 그대로 남아요)`)) return;
+  showLoader(true);
+  try {
+    await api('deleteStudent', { grade: state.rosterTab, name });
+    await loadAll();
+    renderRoster();
+    toast('삭제되었습니다');
+  } catch (e) { /* */ }
+  finally { showLoader(false); }
+}
+
+/* ============================================================
+   투표 모달 핸들러
+============================================================ */
+document.querySelectorAll('.vote-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    state.selectedChoice = btn.dataset.choice;
+    updateVoteButtons();
+  });
+});
+
+$('vmSubmit').addEventListener('click', submitVote);
+$('dmReset').addEventListener('click', resetStudentResponse);
+
+/* 모달 닫기 (× 버튼 + 배경 탭) */
+document.querySelectorAll('.modal-backdrop').forEach(bd => {
+  bd.addEventListener('click', e => {
+    if (e.target === bd || e.target.matches('[data-close]')) {
+      bd.classList.remove('show');
+    }
+  });
+});
+
+/* ============================================================
+   INIT
+============================================================ */
+function init() {
+  // 저장된 교사 모드 복원
+  if (localStorage.getItem('sc_teacher') === '1') {
+    state.isTeacher = true;
+  }
+
+  // URL 파라미터로 투표 지정 (?v=voteId)
+  const params = new URLSearchParams(location.search);
+  const voteFromUrl = params.get('v');
+  if (voteFromUrl) state.currentVoteId = voteFromUrl;
+
+  loadAll();
+
+  // 자동 갱신
+  setInterval(refreshResponses, REFRESH_INTERVAL_MS);
+
+  // 화면 다시 활성화 시 즉시 갱신
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) refreshResponses();
+  });
+}
+
+init();
+</script>
+</body>
+</html>
