@@ -118,26 +118,51 @@ input, textarea, select { font-family: inherit; font-size: inherit; }
 .vote-meta span { display: inline-flex; align-items: center; gap: 4px; }
 .vote-meta .icon { opacity: 0.6; }
 
-/* 투표 선택 드롭다운 (교사 모드) */
-.vote-selector {
+/* 투표 탭 (활성 투표 2개 이상이거나 교사 모드일 때) */
+.vote-tabs {
   display: none;
   margin-top: 14px;
   padding-top: 14px;
   border-top: 1px solid rgba(255,255,255,0.12);
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 2px;
 }
-.teacher-mode .vote-selector { display: block; }
-.vote-selector select {
-  width: 100%;
-  padding: 10px 12px;
-  background: rgba(0,0,0,0.25);
-  border: 1px solid rgba(255,255,255,0.15);
-  border-radius: var(--radius-sm);
-  color: #fff;
-  appearance: none;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path d='M1 1l5 5 5-5' stroke='white' stroke-width='1.5' fill='none' stroke-linecap='round'/></svg>");
-  background-repeat: no-repeat;
-  background-position: right 12px center;
-  padding-right: 36px;
+.vote-tabs::-webkit-scrollbar { display: none; }
+.teacher-mode .vote-tabs,
+.app.multi-vote .vote-tabs { display: flex; }
+
+.vote-tab {
+  flex-shrink: 0;
+  padding: 8px 14px;
+  background: rgba(255,255,255,0.08);
+  color: rgba(255,255,255,0.65);
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  border: 1px solid rgba(255,255,255,0.1);
+  transition: all 0.15s;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.vote-tab:active { transform: scale(0.97); }
+.vote-tab.active {
+  background: var(--gold);
+  color: var(--navy);
+  border-color: var(--gold);
+}
+.vote-tab.ended {
+  opacity: 0.5;
+  text-decoration: line-through;
+}
+.vote-tab.ended.active {
+  opacity: 0.85;
+  text-decoration: none;
 }
 
 /* ============================================================
@@ -643,10 +668,8 @@ input, textarea, select { font-family: inherit; font-size: inherit; }
     <h1 class="vote-title" id="voteTitle">투표를 불러오는 중…</h1>
     <div class="vote-meta" id="voteMeta"></div>
 
-    <!-- 교사 모드: 투표 선택 -->
-    <div class="vote-selector">
-      <select id="voteSelect"></select>
-    </div>
+    <!-- 투표 탭 (교사 모드 = 항상 / 학생 모드 = 활성 투표 2개 이상일 때) -->
+    <div class="vote-tabs" id="voteTabs"></div>
   </header>
 
   <!-- 설정 안내 (Apps Script URL 미입력 시) -->
@@ -975,17 +998,37 @@ function renderHeader() {
 }
 
 function renderVoteSelector() {
-  const sel = $('voteSelect');
-  sel.innerHTML = '';
-  state.votes.forEach(v => {
-    const opt = document.createElement('option');
-    opt.value = v.id;
-    const dateStr = v.date ? formatDate(v.date) + ' · ' : '';
-    const statusStr = v.status === 'ended' ? ' [종료]' : '';
-    opt.textContent = `${dateStr}${v.title}${statusStr}`;
-    if (v.id === state.currentVoteId) opt.selected = true;
-    sel.appendChild(opt);
+  const tabs = document.getElementById('voteTabs');
+  tabs.innerHTML = '';
+
+  // 학생 모드에서는 활성(종료 안 된) 투표만 노출
+  const visibleVotes = state.isTeacher
+    ? state.votes
+    : state.votes.filter(v => v.status !== 'ended');
+
+  visibleVotes.forEach(v => {
+    const tab = document.createElement('button');
+    tab.className = 'vote-tab'
+      + (v.id === state.currentVoteId ? ' active' : '')
+      + (v.status === 'ended' ? ' ended' : '');
+
+    // 라벨: "5/25 한솔중" 형태 (날짜 + 상대팀 우선, 없으면 제목)
+    let label = '';
+    if (v.date) label += formatDate(v.date) + ' ';
+    label += v.opponent || v.title || '제목 없음';
+    tab.textContent = label.trim();
+
+    tab.addEventListener('click', async () => {
+      if (v.id === state.currentVoteId) return;
+      state.currentVoteId = v.id;
+      await loadAll();
+    });
+    tabs.appendChild(tab);
   });
+
+  // 학생 모드에서 활성 투표가 2개 이상이면 multi-vote 클래스로 탭 노출
+  const appEl = document.getElementById('app');
+  appEl.classList.toggle('multi-vote', !state.isTeacher && visibleVotes.length >= 2);
 }
 
 function renderStats() {
@@ -1212,13 +1255,8 @@ $('pinInput').addEventListener('keydown', e => {
 });
 
 /* ============================================================
-   투표 선택
+   투표 선택 → 탭 클릭으로 처리 (renderVoteSelector 안)
 ============================================================ */
-$('voteSelect').addEventListener('change', async (e) => {
-  state.currentVoteId = e.target.value;
-  await loadAll();
-});
-
 /* ============================================================
    새 투표 / 투표 편집
 ============================================================ */
